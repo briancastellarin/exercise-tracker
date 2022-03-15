@@ -49,15 +49,16 @@ app.post('/api/users', async (req, res) => {
   const { username } = req.body;
   let find = await USER.findOne({ username: username });
   if (find) {
-    res.json({ username: find.username, _id: find._id });
+    return res.json({ username: find.username, _id: find._id, });
   }
   else {
     let newUser = new USER({ username: username });
-    newUser.save((err, save) => {
-      if (err) return console.log(err);
+    newUser.save((err, s) => {
+      let error = s.validateSync();
+      if (err) return console.log(err + ' | ' + error);
       res.json({
         username: username,
-        _id: save._id
+        _id: s._id
       });
     });
   }
@@ -71,12 +72,14 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
     let find = await USER.findById(id);
     if (find) {
       let _date = (date !== '' || date !== null) ? new Date(date) : new Date();
-      _date = (_date.toString() !== "Invalid Date") ? _date.toDateString() : new Date().toDateString();
+      _date = (_date.toString() !== "Invalid Date") ? _date : new Date();
 
-      let newExercise = new EXERCISE({ username: find.username, description: description, duration: duration, date: _date });
+      let newExercise = new EXERCISE({ username: find.username, description: description, duration: parseInt(duration), date: _date });
+
       newExercise.save((err, s) => {
-        if (err) return console.log(err);
-        res.json({ _id: s._id, username: find.username, description: description, duration: duration, date: _date });
+        let error = s.validateSync();
+        if (err) return console.log(err + ' | ' + error);
+        res.json({ username: find.username, description: description, duration: parseInt(duration), date: _date.toDateString(), _id: id });
       });
     } else {
       res.json({ error: "user don't exist" });
@@ -100,40 +103,53 @@ app.get('/api/users/:_id/logs?', async (req, res) => {
   let { from, to, limit } = req.query;
 
   let user = await USER.findById(index);
-  if (user) {
-    from = new Date(from).toDateString();
-    to = new Date(to).toDateString();
 
-    if (from.toString() !== "Invalid Date" && to.toString() !== "Invalid Date" && parseInt(limit) > 0) {
-      EXERCISE.find({ username: user.username }).where('date').gte(from).lte(to).limit(parseInt(limit)).exec().then((e) => {
-        res.json({
-          _id: user._id,
-          username: user.username,
-          count: e.length,
-          log: e.map(data => ({
-            description: data.description,
-            duration: data.duration,
-            date: data.date.toDateString()
-          }))
-        });
+  if (user) {
+    let exercs = await EXERCISE.find({ username: user.username });
+    if (exercs) {
+      const initial = exercs.length;
+      if (from) {
+        const fromDate = new Date(from)
+        exercs = exercs.filter(i => new Date(i.date) > fromDate);
+      }
+
+      if (to) {
+        const toDate = new Date(to)
+        exercs = exercs.filter(f => new Date(f.date) < toDate);
+      }
+
+      if (limit) {
+        exercs = exercs.slice(0, limit);
+      }
+
+      res.json({
+        username: user.username,
+        count: initial,
+        _id: user._id,
+        log: exercs.map(data => ({
+          description: data.description,
+          duration: parseInt(data.duration),
+          date: data.date.toDateString()
+        }))
       });
     }
     else {
-      EXERCISE.find({ username: user.username }).exec().then((e) => {
-        res.json({
-          _id: user._id,
-          username: user.username,
-          count: e.length,
-          log: e.map(data => ({
-            description: data.description,
-            duration: data.duration,
-            date: data.date.toDateString()
-          }))
-        });
+      res.json({
+        username: user.username,
+        count: exercs.length,
+        _id: user._id,
+        log: exercs.map(data => ({
+          description: data.description,
+          duration: parseInt(data.duration),
+          date: data.date.toDateString()
+        }))
       });
     }
   }
+
 });
+
+
 
 const listener = app.listen(process.env.PORT || 3000, () => {
   console.log('Your app is listening on port ' + listener.address().port)
